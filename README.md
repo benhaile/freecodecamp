@@ -7,6 +7,8 @@
 Welcome to Free Code Camp's open source codebase!
 =======================
 
+[![Join the chat at https://gitter.im/benhaile/freecodecamp](https://badges.gitter.im/benhaile/freecodecamp.svg)](https://gitter.im/benhaile/freecodecamp?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 #Note
 We're currently very close to moving from Express to Loopback. As such, please keep in mind that the instructions here for setting up and running the project do not directly translate to the staging branch. Additionally, the file structure is quite a bit different. As always, the staging branch is the appropriate place to branch off of to fix/add something!
 

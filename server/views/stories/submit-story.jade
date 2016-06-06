@@ -23,11 +23,6 @@
                         span.ion-close-circled
                         |  A headline is required to submit.
             .form-group
-                .col-xs-12.col-md-1
-                    label.control-label.control-label-story-submission(for='name') Comment
-                .col-xs-12.col-md-11
-                    input#description-box.form-control(name="comment-box", placeholder="Kick off the discussion with an optional comment about this link" maxlength='140')
-            .form-group
                 .col-xs-12.col-md-offset-1
                     span.pull-left#textarea_feedback
             .form-group
@@ -50,10 +45,3 @@
         if (storyImage) {
             $('#image-display').removeClass('hidden-element');
         }
-        var text_max = 140;
-        $('#textarea_feedback').html(text_max + ' characters remaining');
-        $('#description-box').keyup(function () {
-            var text_length = $('#description-box').val().length;
-            var text_remaining = text_max - text_length;
-            $('#textarea_feedback').html(text_remaining + ' characters remaining');
-        });

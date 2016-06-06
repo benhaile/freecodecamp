@@ -31,19 +31,7 @@
     "dataSource": "mail",
     "public": false
   },
-  "bonfire": {
-    "dataSource": "db",
-    "public": true
-  },
   "challenge": {
-    "dataSource": "db",
-    "public": true
-  },
-  "comment": {
-    "dataSource": "db",
-    "public": true
-  },
-  "fieldGuide": {
     "dataSource": "db",
     "public": true
   },
@@ -61,10 +49,7 @@
   },
   "user": {
     "dataSource": "db",
-    "public": true,
-    "options": {
-      "emailVerificationRequired": true
-    }
+    "public": true
   },
   "userCredential": {
     "dataSource": "db",

@@ -19,9 +19,11 @@ const routes = [
 export default function reactSubRouter(app) {
   var router = app.loopback.Router();
 
-  routes.forEach(function(route) {
-    router.get(route, serveReactApp);
-  });
+  if (process.env.NODE_ENV === 'development') {
+    routes.forEach(function(route) {
+      router.get(route, serveReactApp);
+    });
+  }
 
   app.use(router);
 
@@ -51,9 +53,13 @@ export default function reactSubRouter(app) {
       // makes sure we only get one onNext and closes subscription
       .flatMap(function({ data, markup }) {
         debug('react rendered');
+        const { title } = data.AppStore;
         res.expose(data, 'data');
         // now render jade file with markup injected from react
-        return res.render$('layout-react', { markup: markup });
+        return res.render$(
+          'layout-react',
+          { markup, title }
+        );
       })
       .subscribe(
         function(markup) {

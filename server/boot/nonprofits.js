@@ -1,3 +1,4 @@
+var Rx = require('rx');
 var debug = require('debug')('freecc:nonprofits');
 var observeMethod = require('../utils/rx').observeMethod;
 var unDasherize = require('../utils').unDasherize;
@@ -15,18 +16,19 @@ module.exports = function(app) {
   app.use(router);
 
   function nonprofitsDirectory(req, res, next) {
-    var sum = 0;
-    findNonprofits({}).subscribe(
-      function(nonprofits) {
-        nonprofits = nonprofits.sort(function(a, b) {
-            return b.moneySaved - a.moneySaved;
-        });
-        totalSavings = function() {
-          for(i = 0; i < nonprofits.length; i++) {
-            sum += nonprofits[i].moneySaved;
-          }
-          return sum;
-        }();
+    findNonprofits({
+      order: 'moneySaved DESC'
+    })
+      .flatMap(
+        (nonprofits = []) => {
+          // turn array of nonprofits into observable array
+          return Rx.Observable.from(nonprofits)
+            .pluck('moneySaved')
+            .reduce((sum, moneySaved = 0) => sum + moneySaved, 0);
+        },
+        (nonprofits = [], totalSavings) => ({ nonprofits, totalSavings })
+      )
+      .subscribe(({ nonprofits, totalSavings }) => {
         res.render('nonprofits/directory', {
           title: 'Nonprofits we help',
           nonprofits: nonprofits,
@@ -62,23 +64,22 @@ module.exports = function(app) {
           return res.redirect('../nonprofit/' + dashedNameFull);
         }
 
-        var buttonActive = false;
-        if (
-          req.user &&
-          req.user.uncompletedBonfires.length === 0 &&
-          req.user.completedCoursewares.length > 63
-        ) {
-          var hasShownInterest =
-            nonprofit.interestedCampers.filter(function(user) {
-              return user.username === req.user.username;
-            });
-
-          if (hasShownInterest.length === 0) {
-            buttonActive = true;
-          }
-        }
-
-
+        //  We need to create logic that verifies completion.
+        //  Defaulting to false for now.
+        //  var buttonActive = false;
+        //  if (
+        //    req.user &&
+        //    req.user.completedCoursewares.length > 63
+        //  ) {
+        //    var hasShownInterest =
+        //      nonprofit.interestedCampers.filter(function(user) {
+        //        return user.username === req.user.username;
+        //      });
+        //
+        //    if (hasShownInterest.length === 0) {
+        //      buttonActive = true;
+        //    }
+        //  }
 
         res.render('nonprofits/show', {
           dashedName: dashedNameFull,
@@ -112,7 +113,7 @@ module.exports = function(app) {
           whatDoesNonprofitDo: nonprofit.whatDoesNonprofitDo,
           interestedCampers: nonprofit.interestedCampers,
           assignedCampers: nonprofit.assignedCampers,
-          buttonActive: buttonActive,
+          buttonActive: false,
           moneySaved: nonprofit.moneySaved,
           currentStatus: nonprofit.currentStatus
         });

@@ -22,20 +22,11 @@ exports.saveInstance = function saveInstance(instance) {
 // alias saveInstance
 exports.saveUser = exports.saveInstance;
 
-exports.observableQueryFromModel =
+exports.observeQuery = exports.observableQueryFromModel =
   function observableQueryFromModel(Model, method, query) {
     return Rx.Observable.fromNodeCallback(Model[method], Model)(query);
   };
 
 exports.observeMethod = function observeMethod(context, methodName) {
   return Rx.Observable.fromNodeCallback(context[methodName], context);
-};
-
-// add rx methods to express
-exports.rxMiddleware = function rxMiddleware() {
-  return function rxMiddleware(req, res, next) {
-    // render to observable
-    res.render$ = Rx.Observable.fromNodeCallback(res.render, res);
-    next();
-  };
 };

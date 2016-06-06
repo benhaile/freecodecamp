@@ -1,5 +1,4 @@
 var Rx = require('rx'),
-    nodemailer = require('nodemailer'),
     assign = require('object.assign'),
     sanitizeHtml = require('sanitize-html'),
     moment = require('moment'),
@@ -10,6 +9,7 @@ var Rx = require('rx'),
     saveUser = require('../utils/rx').saveUser,
     saveInstance = require('../utils/rx').saveInstance,
     MongoClient = mongodb.MongoClient,
+    validator = require('validator'),
     secrets = require('../../config/secrets');
 
 var foundationDate = 1413298800000;
@@ -18,23 +18,7 @@ var time48Hours = 172800000;
 var unDasherize = utils.unDasherize;
 var dasherize = utils.dasherize;
 var getURLTitle = utils.getURLTitle;
-
-var transporter = nodemailer.createTransport({
-  service: 'Mandrill',
-  auth: {
-    user: secrets.mandrill.user,
-    pass: secrets.mandrill.password
-  }
-});
-
-function sendMailWhillyNilly(mailOptions) {
-  transporter.sendMail(mailOptions, function(err) {
-    if (err) {
-      console.log('err sending mail whilly nilly', err);
-      console.log('logging err but not carring');
-    }
-  });
-}
+var ifNoUser401 = require('../utils/middleware').ifNoUser401;
 
 function hotRank(timeValue, rank) {
   /*
@@ -69,7 +53,6 @@ module.exports = function(app) {
   var router = app.loopback.Router();
   var User = app.models.User;
   var findUserById = observeMethod(User, 'findById');
-  var findOneUser = observeMethod(User, 'findOne');
 
   var Story = app.models.Story;
   var findStory = observeMethod(Story, 'find');
@@ -77,22 +60,16 @@ module.exports = function(app) {
   var findStoryById = observeMethod(Story, 'findById');
   var countStories = observeMethod(Story, 'count');
 
-  var Comment = app.models.Comment;
-  var findCommentById = observeMethod(Comment, 'findById');
-
+  router.get('/news/hot', hotJSON);
   router.get('/stories/hotStories', hotJSON);
-  router.get('/stories/comments/:id', comments);
-  router.post('/stories/comment/', commentSubmit);
-  router.post('/stories/comment/:id/comment', commentOnCommentSubmit);
-  router.put('/stories/comment/:id/edit', commentEdit);
   router.get('/stories/submit', submitNew);
   router.get('/stories/submit/new-story', preSubmit);
-  router.post('/stories/preliminary', newStory);
-  router.post('/stories/', storySubmission);
+  router.post('/stories/preliminary', ifNoUser401, newStory);
+  router.post('/stories/', ifNoUser401, storySubmission);
   router.get('/news/', hot);
   router.post('/stories/search', getStories);
   router.get('/news/:storyName', returnIndividualStory);
-  router.post('/stories/upvote/', upvote);
+  router.post('/stories/upvote/', ifNoUser401, upvote);
   router.get('/stories/:storyName', redirectToNews);
 
   app.use(router);
@@ -131,8 +108,12 @@ module.exports = function(app) {
     });
   }
 
-  function preSubmit(req, res) {
+  function preSubmit(req, res, next) {
     var data = req.query;
+    if (typeof data.url !== 'string') {
+      req.flash('errors', { msg: 'No URL supplied with story' });
+      return next(new TypeError('No URL supplied with story'));
+    }
     var cleanedData = cleanData(data.url);
 
     if (data.url.replace(/&/g, '&amp;') !== cleanedData) {
@@ -191,10 +172,8 @@ module.exports = function(app) {
           originalStoryLink: dashedName,
           originalStoryAuthorEmail: story.author.email || '',
           author: story.author,
-          description: story.description,
           rank: story.upVotes.length,
           upVotes: story.upVotes,
-          comments: story.comments,
           id: story.id,
           timeAgo: moment(story.timePosted).fromNow(),
           image: story.image,
@@ -224,7 +203,6 @@ module.exports = function(app) {
         rank: 1,
         upVotes: 1,
         author: 1,
-        comments: 1,
         image: 1,
         storyLink: 1,
         metaDescription: 1,
@@ -250,7 +228,7 @@ module.exports = function(app) {
   }
 
   function upvote(req, res, next) {
-    var id = req.body.data.id;
+    const { id } = req.body;
     var story$ = findStoryById(id).shareReplay();
 
     story$.flatMap(function(story) {
@@ -260,13 +238,11 @@ module.exports = function(app) {
       .flatMap(function(user) {
         // if user deletes account then this will not exist
         if (user) {
-          user.progressTimestamps.push(Date.now());
+          user.progressTimestamps.push({
+            timestamp: Date.now()
+          });
         }
         return saveUser(user);
-      })
-      .flatMap(function() {
-        req.user.progressTimestamps.push(Date.now());
-        return saveUser(req.user);
       })
       .flatMap(function() {
         return story$;
@@ -288,24 +264,13 @@ module.exports = function(app) {
       );
   }
 
-  function comments(req, res, next) {
-    var id = req.params.id;
-    findCommentById(id).subscribe(
-      function(comment) {
-        res.send(comment);
-      },
-      next
-    );
-  }
-
   function newStory(req, res, next) {
     if (!req.user) {
       return next(new Error('Must be logged in'));
     }
     var url = req.body.data.url;
-    var cleanURL = cleanData(url);
 
-    if (cleanURL !== url) {
+    if (!validator.isURL(url)) {
       req.flash('errors', {
         msg: "The URL you submitted doesn't appear valid"
       });
@@ -411,7 +376,6 @@ module.exports = function(app) {
             username: req.user.username,
             email: req.user.email
           },
-          comments: [],
           image: data.image,
           storyLink: storyLink,
           metaDescription: data.storyMetaDescription,
@@ -420,7 +384,9 @@ module.exports = function(app) {
         return saveInstance(newStory);
       });
 
-    req.user.progressTimestamps.push(Date.now());
+    req.user.progressTimestamps.push({
+      timestamp: Date.now()
+    });
     return saveUser(req.user)
       .flatMap(savedStory)
       .subscribe(
@@ -431,175 +397,5 @@ module.exports = function(app) {
         },
         next
       );
-  }
-
-  function commentSubmit(req, res, next) {
-    var data = req.body.data;
-    if (!req.user) {
-      return next(new Error('Not authorized'));
-    }
-    var sanitizedBody = cleanData(data.body);
-
-    if (data.body !== sanitizedBody) {
-      req.flash('errors', {
-        msg: 'HTML is not allowed'
-      });
-      return res.send(true);
-    }
-    var comment = new Comment({
-      associatedPost: data.associatedPost,
-      originalStoryLink: data.originalStoryLink,
-      originalStoryAuthorEmail: data.originalStoryAuthorEmail,
-      body: sanitizedBody,
-      rank: 0,
-      upvotes: 0,
-      author: {
-        picture: req.user.picture,
-        userId: req.user.id,
-        username: req.user.username,
-        email: req.user.email
-      },
-      comments: [],
-      topLevel: true,
-      commentOn: Date.now()
-    });
-
-    commentSave(comment, findStoryById).subscribe(
-      function() {},
-      next,
-      function() {
-        res.send(true);
-      }
-    );
-  }
-
-  function commentOnCommentSubmit(req, res, next) {
-    var data = req.body.data;
-    if (!req.user) {
-      return next(new Error('Not authorized'));
-    }
-
-    var sanitizedBody = cleanData(data.body);
-
-    if (data.body !== sanitizedBody) {
-      req.flash('errors', {
-        msg: 'HTML is not allowed'
-      });
-      return res.send(true);
-    }
-
-    var comment = new Comment({
-      associatedPost: data.associatedPost,
-      body: sanitizedBody,
-      rank: 0,
-      upvotes: 0,
-      originalStoryLink: data.originalStoryLink,
-      originalStoryAuthorEmail: data.originalStoryAuthorEmail,
-      author: {
-        picture: req.user.picture,
-        userId: req.user.id,
-        username: req.user.username,
-        email: req.user.email
-      },
-      comments: [],
-      topLevel: false,
-      commentOn: Date.now()
-    });
-    commentSave(comment, findCommentById).subscribe(
-      function() {},
-      next,
-      function() {
-        res.send(true);
-      }
-    );
-  }
-
-  function commentEdit(req, res, next) {
-    findCommentById(req.params.id)
-      .doOnNext(function(comment) {
-        if (!req.user && comment.author.userId !== req.user.id) {
-          throw new Error('Not authorized');
-        }
-      })
-      .flatMap(function(comment) {
-        var sanitizedBody = cleanData(req.body.body);
-        if (req.body.body !== sanitizedBody) {
-          req.flash('errors', {
-            msg: 'HTML is not allowed'
-          });
-        }
-        comment.body = sanitizedBody;
-        comment.commentOn = Date.now();
-        return saveInstance(comment);
-      })
-      .subscribe(
-        function() {
-          res.send(true);
-        },
-        next
-      );
-  }
-
-  function commentSave(comment, findContextById) {
-    return saveInstance(comment)
-      .flatMap(function(comment) {
-        // Based on the context retrieve the parent
-        // object of the comment (Story/Comment)
-        return findContextById(comment.associatedPost);
-      })
-      .flatMap(function(associatedContext) {
-        if (associatedContext) {
-          associatedContext.comments.push(comment.id);
-        }
-        // NOTE(berks): saveInstance is safe
-        // it will automatically call onNext with null and onCompleted if
-        // argument is falsey or has no method save
-        return saveInstance(associatedContext);
-      })
-      .flatMap(function(associatedContext) {
-        // Find the author of the parent object
-        // if no username
-        var username = associatedContext && associatedContext.author ?
-          associatedContext.author.username :
-          null;
-
-        var query = { where: { username: username } };
-        return findOneUser(query);
-      })
-      // if no user is found we don't want to hit the doOnNext
-      // filter here will call onCompleted without running through the following
-      // steps
-      .filter(function(user) {
-        return !!user;
-      })
-      // if this is called user is guarenteed to exits
-      // this is a side effect, hence we use do/tap observable methods
-      .doOnNext(function(user) {
-        // If the emails of both authors differ,
-        // only then proceed with email notification
-        if (
-          comment.author &&
-          comment.author.email &&
-          user.email &&
-          (comment.author.email !== user.email)
-        ) {
-          sendMailWhillyNilly({
-            to: user.email,
-            from: 'Team@freecodecamp.com',
-            subject: comment.author.username +
-            ' replied to your post on Camper News',
-            text: [
-              'Just a quick heads-up: ',
-              comment.author.username,
-              ' replied to you on Camper News.',
-              'You can keep this conversation going.',
-              'Just head back to the discussion here: ',
-              'http://freecodecamp.com/stories/',
-              comment.originalStoryLink,
-              '- the Free Code Camp Volunteer Team'
-            ].join('\n')
-          });
-        }
-      });
   }
 };
